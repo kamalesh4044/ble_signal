@@ -20,9 +20,17 @@ jobs:
         cache: gradle
 
     - name: Build with Gradle
-      run: gradle assembleDebug
+      run: gradle assembleDebug --stacktrace --info
+      
+    - name: Upload build reports
+      if: failure()
+      uses: actions/upload-artifact@v4
+      with:
+        name: build-reports
+        path: app/build/reports/
 
     - name: Upload APK
+      if: success()
       uses: actions/upload-artifact@v4
       with:
         name: app-debug
