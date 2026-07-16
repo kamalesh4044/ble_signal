@@ -4,10 +4,11 @@ import android.Manifest
 import android.annotation.SuppressLint
 import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothManager
-import android.bluetooth.BluetoothProfile
 import android.bluetooth.le.AdvertiseCallback
 import android.bluetooth.le.AdvertiseData
 import android.bluetooth.le.AdvertiseSettings
+import android.bluetooth.le.ScanCallback
+import android.bluetooth.le.ScanResult
 import android.content.Context
 import android.content.pm.PackageManager
 import android.os.Bundle
@@ -22,10 +23,13 @@ import java.util.UUID
 class MainActivity : AppCompatActivity() {
 
     private lateinit var tvStatus: TextView
+    private lateinit var tvDeviceList: TextView
     private lateinit var btnStartServer: Button
     private lateinit var btnScan: Button
 
     private var bluetoothAdapter: BluetoothAdapter? = null
+    private var isScanning = false
+    private val scannedDevices = mutableMapOf<String, String>()
     
     // A2DP Sink UUID (Standard Bluetooth Audio Receiver)
     private val A2DP_SINK_UUID = ParcelUuid(UUID.fromString("0000110B-0000-1000-8000-00805F9B34FB"))
@@ -42,6 +46,7 @@ class MainActivity : AppCompatActivity() {
         setContentView(R.layout.activity_main)
 
         tvStatus = findViewById(R.id.tvStatus)
+        tvDeviceList = findViewById(R.id.tvDeviceList)
         btnStartServer = findViewById(R.id.btnStartServer)
         btnScan = findViewById(R.id.btnScan)
 
@@ -57,7 +62,13 @@ class MainActivity : AppCompatActivity() {
         }
 
         btnScan.setOnClickListener {
-            tvStatus.text = "Status: Scan disabled for this prototype."
+            if (checkAndRequestPermissions()) {
+                if (isScanning) {
+                    stopScanningForDevices()
+                } else {
+                    startScanningForDevices()
+                }
+            }
         }
     }
 
@@ -101,22 +112,83 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    @SuppressLint("MissingPermission")
+    private fun startScanningForDevices() {
+        val scanner = bluetoothAdapter?.bluetoothLeScanner
+        if (scanner == null) {
+            tvStatus.text = "Error: BLE Scanner not available."
+            return
+        }
+        
+        scannedDevices.clear()
+        updateDeviceListUI()
+        
+        scanner.startScan(scanCallback)
+        isScanning = true
+        btnScan.text = "Stop Scanning"
+        tvStatus.text = "Status: Scanning for nearby devices..."
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun stopScanningForDevices() {
+        val scanner = bluetoothAdapter?.bluetoothLeScanner
+        scanner?.stopScan(scanCallback)
+        isScanning = false
+        btnScan.text = "Scan for Nearby Devices"
+        tvStatus.text = "Status: Scan stopped. Found ${scannedDevices.size} devices."
+    }
+
+    private val scanCallback = object : ScanCallback() {
+        @SuppressLint("MissingPermission")
+        override fun onScanResult(callbackType: Int, result: ScanResult) {
+            super.onScanResult(callbackType, result)
+            
+            val device = result.device
+            val address = device.address
+            val name = device.name ?: "Unknown Device (Hidden)"
+            val rssi = result.rssi
+            
+            val label = "[$address] $name (Strength: $rssi dBm)"
+            
+            // Prioritize named devices over unknown ones for the same MAC
+            if (!scannedDevices.containsKey(address) || (name != "Unknown Device (Hidden)")) {
+                scannedDevices[address] = label
+                updateDeviceListUI()
+            }
+        }
+
+        override fun onScanFailed(errorCode: Int) {
+            super.onScanFailed(errorCode)
+            runOnUiThread {
+                tvStatus.text = "Status: Scan Failed. Code: $errorCode"
+            }
+        }
+    }
+
+    private fun updateDeviceListUI() {
+        runOnUiThread {
+            if (scannedDevices.isEmpty()) {
+                tvDeviceList.text = "Listening for signals..."
+            } else {
+                val sb = StringBuilder()
+                sb.append("Total Devices Found: ${scannedDevices.size}\n\n")
+                
+                // Sort by name so known devices appear at the top
+                val sorted = scannedDevices.values.sortedBy { it.contains("Unknown") }
+                for (deviceStr in sorted) {
+                    sb.append(deviceStr).append("\n\n")
+                }
+                tvDeviceList.text = sb.toString()
+            }
+        }
+    }
+
     private fun attemptA2dpSinkReflection() {
         try {
-            // Attempt to get the hidden BluetoothA2dpSink class
             val a2dpSinkClass = Class.forName("android.bluetooth.BluetoothA2dpSink")
-            
-            // In a real system app, we would register a profile listener for A2dpSink.
-            // Since this is restricted, we'll just log if we can even see the class.
             runOnUiThread {
                 tvStatus.append("\nReflection: Found BluetoothA2dpSink class.")
             }
-            Log.d("BTAudio", "Successfully reflected android.bluetooth.BluetoothA2dpSink")
-            
-            // NOTE: Actually instantiating it and registering it as an active profile
-            // requires BLUETOOTH_PRIVILEGED (System app) or rooted access.
-            // Any further reflection calls to connect/accept will throw SecurityExceptions.
-            
         } catch (e: Exception) {
             e.printStackTrace()
             runOnUiThread {
@@ -139,5 +211,8 @@ class MainActivity : AppCompatActivity() {
     override fun onDestroy() {
         super.onDestroy()
         bluetoothAdapter?.bluetoothLeAdvertiser?.stopAdvertising(advertiseCallback)
+        if (isScanning) {
+            bluetoothAdapter?.bluetoothLeScanner?.stopScan(scanCallback)
+        }
     }
 }

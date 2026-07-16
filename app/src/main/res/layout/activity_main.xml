@@ -14,15 +14,30 @@
 
     <Button
         android:id="@+id/btnStartServer"
-        android:text="Start Server (Accept Connections)"
+        android:text="Advertise as Bluetooth Speaker"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"/>
 
     <Button
         android:id="@+id/btnScan"
-        android:text="Scan &amp; Connect (Client)"
+        android:text="Scan for Nearby Devices"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_marginTop="12dp"/>
+        
+    <ScrollView
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:layout_marginTop="16dp"
+        android:background="#11000000">
+        
+        <TextView
+            android:id="@+id/tvDeviceList"
+            android:text="Nearby Devices will appear here..."
+            android:padding="8dp"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"/>
+    </ScrollView>
 
 </LinearLayout>
